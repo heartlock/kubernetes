@@ -358,7 +358,7 @@ func (plugin *kubenetNetworkPlugin) setup(namespace string, name string, id kube
 	return nil
 }
 
-func (plugin *kubenetNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.ContainerID) error {
+func (plugin *kubenetNetworkPlugin) SetUpPod(namespace string, name string, id kubecontainer.ContainerID, runtime string) error {
 	plugin.mu.Lock()
 	defer plugin.mu.Unlock()
 
@@ -430,7 +430,7 @@ func (plugin *kubenetNetworkPlugin) teardown(namespace string, name string, id k
 	return utilerrors.NewAggregate(errList)
 }
 
-func (plugin *kubenetNetworkPlugin) TearDownPod(namespace string, name string, id kubecontainer.ContainerID) error {
+func (plugin *kubenetNetworkPlugin) TearDownPod(namespace string, name string, id kubecontainer.ContainerID, runtime string) error {
 	plugin.mu.Lock()
 	defer plugin.mu.Unlock()
 
@@ -459,7 +459,7 @@ func (plugin *kubenetNetworkPlugin) TearDownPod(namespace string, name string, i
 
 // TODO: Use the addToNetwork function to obtain the IP of the Pod. That will assume idempotent ADD call to the plugin.
 // Also fix the runtime's call to Status function to be done only in the case that the IP is lost, no need to do periodic calls
-func (plugin *kubenetNetworkPlugin) GetPodNetworkStatus(namespace string, name string, id kubecontainer.ContainerID) (*network.PodNetworkStatus, error) {
+func (plugin *kubenetNetworkPlugin) GetPodNetworkStatus(namespace string, name string, id kubecontainer.ContainerID, runtime string) (*network.PodNetworkStatus, error) {
 	plugin.mu.Lock()
 	defer plugin.mu.Unlock()
 	// Assuming the ip of pod does not change. Try to retrieve ip from kubenet map first.

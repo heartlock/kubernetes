@@ -186,6 +186,15 @@ func UnsecuredKubeletConfig(s *options.KubeletServer) (*KubeletConfig, error) {
 		return nil, err
 	}
 
+	// network plugins
+	//networkPluginName := s.NetworkPluginName
+	networkPlugins := ProbeNetworkPlugins(s.NetworkPluginDir)
+
+	if s.NetworkProvider != "" {
+		networkPlugins = append(networkPlugins, NewNeutronNetworkPlugin(s.NetworkProvider))
+		//networkPluginName = "neutron"
+	}
+
 	thresholds, err := eviction.ParseThresholdConfig(s.EvictionHard, s.EvictionSoft, s.EvictionSoftGracePeriod)
 	if err != nil {
 		return nil, err
@@ -241,7 +250,7 @@ func UnsecuredKubeletConfig(s *options.KubeletServer) (*KubeletConfig, error) {
 		MinimumGCAge:                 s.MinimumGCAge.Duration,
 		Mounter:                      mounter,
 		NetworkPluginName:            s.NetworkPluginName,
-		NetworkPlugins:               ProbeNetworkPlugins(s.NetworkPluginDir),
+		NetworkPlugins:               networkPlugins,
 		NodeLabels:                   s.NodeLabels,
 		NodeStatusUpdateFrequency:    s.NodeStatusUpdateFrequency.Duration,
 		NonMasqueradeCIDR:            s.NonMasqueradeCIDR,

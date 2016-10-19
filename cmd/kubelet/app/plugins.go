@@ -26,6 +26,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/network/cni"
 	"k8s.io/kubernetes/pkg/kubelet/network/exec"
 	"k8s.io/kubernetes/pkg/kubelet/network/kubenet"
+	"k8s.io/kubernetes/pkg/kubelet/network/neutron"
 	// Volume plugins
 	"k8s.io/kubernetes/pkg/volume"
 	"k8s.io/kubernetes/pkg/volume/aws_ebs"
@@ -95,4 +96,9 @@ func ProbeNetworkPlugins(pluginDir string) []network.NetworkPlugin {
 	allPlugins = append(allPlugins, kubenet.NewPlugin(pluginDir))
 
 	return allPlugins
+}
+
+// NetworkProvider network plugin
+func NewNeutronNetworkPlugin(addr string) network.NetworkPlugin {
+	return neutron.NewNeutronNetworkPlugin(addr)
 }

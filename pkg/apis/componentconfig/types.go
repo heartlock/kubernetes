@@ -248,6 +248,8 @@ type KubeletConfiguration struct {
 	// networkPluginDir is the full path of the directory in which to search
 	// for network plugins
 	NetworkPluginDir string `json:"networkPluginDir"`
+	// networkProvider is the endpoint of network provider
+	NetworkProvider string `json:"NetworkProvider"`
 	// volumePluginDir is the full path of the directory in which to search
 	// for additional third party volume plugins
 	VolumePluginDir string `json:"volumePluginDir"`
