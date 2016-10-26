@@ -121,6 +121,11 @@ func (plugin *NeutronNetworkPlugin) SetUpPod(namespace string, name string, podI
 		return nil
 	}*/
 
+	network := types.Network{
+		Uid:      "d9aa68d1-5e77-4e47-b4b6-0b56fe85c2af",
+		TenantID: "a2581b5b574e4115afb6db4d7d704fb7",
+	}
+
 	resp, err := plugin.podClient.SetupPod(
 		context.Background(),
 		&types.SetupPodRequest{
@@ -128,7 +133,7 @@ func (plugin *NeutronNetworkPlugin) SetUpPod(namespace string, name string, podI
 			Namespace:           namespace,
 			PodInfraContainerID: podInfraContainerID.ID,
 			ContainerRuntime:    containerRuntime,
-			//Network:             network,
+			Network:             network,
 		},
 	)
 	if err != nil || resp.Error != "" {
