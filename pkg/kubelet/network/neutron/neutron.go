@@ -121,7 +121,7 @@ func (plugin *NeutronNetworkPlugin) SetUpPod(namespace string, name string, podI
 		return nil
 	}*/
 
-	network := types.Network{
+	testnet := &types.Network{
 		Uid:      "d9aa68d1-5e77-4e47-b4b6-0b56fe85c2af",
 		TenantID: "a2581b5b574e4115afb6db4d7d704fb7",
 	}
@@ -133,7 +133,7 @@ func (plugin *NeutronNetworkPlugin) SetUpPod(namespace string, name string, podI
 			Namespace:           namespace,
 			PodInfraContainerID: podInfraContainerID.ID,
 			ContainerRuntime:    containerRuntime,
-			Network:             network,
+			Network:             testnet,
 		},
 	)
 	if err != nil || resp.Error != "" {
@@ -160,6 +160,11 @@ func (plugin *NeutronNetworkPlugin) TearDownPod(namespace string, name string, p
 		return nil
 	}*/
 
+	testnet := &types.Network{
+		Uid:      "d9aa68d1-5e77-4e47-b4b6-0b56fe85c2af",
+		TenantID: "a2581b5b574e4115afb6db4d7d704fb7",
+	}
+
 	resp, err := plugin.podClient.TeardownPod(
 		context.Background(),
 		&types.TeardownPodRequest{
@@ -167,7 +172,7 @@ func (plugin *NeutronNetworkPlugin) TearDownPod(namespace string, name string, p
 			Namespace:           namespace,
 			PodInfraContainerID: podInfraContainerID.ID,
 			ContainerRuntime:    containerRuntime,
-			//Network:             network,
+			Network:             testnet,
 		},
 	)
 	if err != nil || resp.Error != "" {
@@ -193,6 +198,11 @@ func (plugin *NeutronNetworkPlugin) GetPodNetworkStatus(namespace string, name s
 		return nil, nil
 	}*/
 
+	testnet := &types.Network{
+		Uid:      "d9aa68d1-5e77-4e47-b4b6-0b56fe85c2af",
+		TenantID: "a2581b5b574e4115afb6db4d7d704fb7",
+	}
+
 	resp, err := plugin.podClient.PodStatus(
 		context.Background(),
 		&types.PodStatusRequest{
@@ -200,7 +210,7 @@ func (plugin *NeutronNetworkPlugin) GetPodNetworkStatus(namespace string, name s
 			Namespace:           namespace,
 			PodInfraContainerID: podInfraContainerID.ID,
 			ContainerRuntime:    containerRuntime,
-			//Network:             network,
+			Network:             testnet,
 		},
 	)
 	if err != nil || resp.Error != "" {
