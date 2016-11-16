@@ -11,6 +11,23 @@ service Networks {
     rpc CreateNetwork(CreateNetworkRequest) returns (CommonResponse) {}
     rpc UpdateNetwork(UpdateNetworkRequest) returns (CommonResponse) {}
     rpc DeleteNetwork(DeleteNetworkRequest) returns (CommonResponse) {}
+    rpc ListNetworks(ListNetworkRequest) returns (ListNetworkResponse) {}
+}
+
+service Subnets {
+    rpc ListSubnets(ListSubnetsRequest) returns (ListSubnetsResponse) {}
+    rpc CreateSubnet(CreateSubnetRequest) returns (CommonResponse) {}
+    rpc GetSubnet(GetSubnetRequest) returns (GetSubnetResponse) {}
+    rpc UpdateSubnet(UpdateSubnetRequest) returns (CommonResponse) {}
+    rpc DeleteSubnet(DeleteSubnetRequest) returns (CommonResponse) {}
+}
+
+service Fwaas {
+	rpc ListRules(ListRulesRequest) returns (ListRulesResponse) {}
+	rpc GetRule(GetRuleRequest) returns (GetRuleResponse) {}
+	rpc CreateRule(CreateRuleRequest) returns (CommonResponse) {}
+	rpc UpdateRule(UpdateRuleRequest) returns (CommonResponse) {}
+	rpc DeleteRule(DeleteRuleRequest) returns (CommonResponse) {}
 }
 
 service LoadBalancers {
@@ -26,6 +43,7 @@ service Pods {
 	rpc PodStatus(PodStatusRequest) returns (PodStatusResponse) {}
 }
 
+
 message ActiveRequest {
 }
 
@@ -40,13 +58,14 @@ message CommonResponse {
 
 // Subnet is a representaion of a subnet
 message Subnet {
-	string name                = 1;
-	string uid        = 2;
-	string cidr                = 3;
-	string gateway             = 4;
-	string tenantid            = 5;
-	repeated string dnsservers = 6;
-	repeated Route routes      = 7;
+	string networkID	      = 1;
+	string name                = 2;
+	string uid        = 3;
+	string cidr                = 4;
+	string gateway             = 5;
+	string tenantid            = 6;
+	repeated string dnsservers = 7;
+	repeated Route routes      = 8;
 }
 
 // Route is a representation of an advanced routing rule.
@@ -56,6 +75,22 @@ message Route {
 	string destinationCIDR = 3;
 }
 
+// Rule is a representaion of a Rule
+message Rule {
+	string name	=1;
+	string id		=2;
+	string tenantID	=3;
+	string policyID 	=4;
+	string protocol	=5;
+	string action	=6;
+	int32 iPVersion	=7;
+	string sourceIPAddress	=8;
+	string destinationIPAddress	=9;
+	string sourcePort	=10;
+	string destinationPort 	=11;
+	bool shared	=12;
+	bool enabled	=13;	
+}
 
 message Network {
     string name             = 1;
@@ -87,7 +122,76 @@ message UpdateNetworkRequest {
 }
 
 message DeleteNetworkRequest {
-    string networkName = 1;
+    string networkID = 1;
+}
+message ListNetworkRequest {
+	string tenantID = 1;
+}
+
+message ListNetworkResponse {
+	repeated Network networks = 1;
+	string error = 2;
+}
+
+message ListSubnetsRequest {
+	string networkID = 1;
+}
+
+message ListSubnetsResponse {
+	repeated Subnet subnets = 1;
+	string error = 2;
+}
+
+message CreateSubnetRequest {
+	Subnet subnet = 1;
+}
+
+message GetSubnetRequest {
+	string subnetID = 1;
+}
+
+message GetSubnetResponse {
+    Subnet subnet = 1;
+    string error    = 2;
+}
+
+message DeleteSubnetRequest {
+	string subnetID = 1;
+	string networkID = 2;
+}
+
+message UpdateSubnetRequest {
+	Subnet subnet = 1;
+}
+
+message ListRulesRequest {
+	string tenantID = 1;
+}
+
+message ListRulesResponse {
+	repeated Rule rules = 1;
+	string error = 2;
+}
+
+message GetRuleRequest {
+   	 string ruleID   = 1;
+}
+
+message GetRuleResponse {
+    	Rule rule = 1;
+   	string error    = 2;
+}
+
+message CreateRuleRequest {
+	Rule rule = 1;
+}
+
+message DeleteRuleRequest {
+	string ruleID = 1;
+}
+
+message UpdateRuleRequest {
+	Rule rule = 1;
 }
 
 message GetLoadBalancerRequest {
@@ -162,6 +266,7 @@ message SetupPodRequest {
     string containerRuntime     = 3;
     string podInfraContainerID  = 4;
     Network network             = 5;
+    string subnetID	=6;
 }
 
 message TeardownPodRequest {
@@ -181,6 +286,6 @@ message PodStatusRequest {
 }
 
 message PodStatusResponse {
-	string ip       = 1;
+    string ip       = 1;
     string error    = 2;
 }

@@ -24,6 +24,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
+	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	kubecontainer "k8s.io/kubernetes/pkg/kubelet/container"
 	"k8s.io/kubernetes/pkg/kubelet/network"
 	"k8s.io/kubernetes/pkg/kubelet/network/neutron/types"
@@ -36,8 +37,10 @@ const (
 
 type NeutronNetworkPlugin struct {
 	host          network.Host
+	client        clientset.Interface
 	podClient     types.PodsClient
 	networkClient types.NetworksClient
+	subnetClient  types.SubnetsClient
 	//	TODO (heartlock)add dbclient for getNetworkOfNamespace
 }
 
@@ -49,9 +52,11 @@ func NewNeutronNetworkPlugin(addr string) *NeutronNetworkPlugin {
 	}
 	networkClient := types.NewNetworksClient(conn)
 	podClient := types.NewPodsClient(conn)
+	subnetClient := types.NewSubnetsClient(conn)
 	return &NeutronNetworkPlugin{
 		podClient:     podClient,
 		networkClient: networkClient,
+		subnetClient:  subnetClient,
 	}
 }
 
@@ -60,42 +65,48 @@ func NewNeutronNetworkPlugin(addr string) *NeutronNetworkPlugin {
 func (plugin *NeutronNetworkPlugin) Init(host network.Host, hairpinMode componentconfig.HairpinMode, nonMasqueradeCIDR string) error {
 	// TODO(harryz) hairpinMode & nonMasqueradeCIDR is not supported for now
 	plugin.host = host
+	plugin.client = host.GetKubeClient()
 	return nil
 }
 
-/*func (plugin *NeutronNetworkPlugin) getNetworkOfNamespace(nsName string) (*types.Network, error) {
-	// get namespace info
-	namespace, err := plugin.client.Core().Namespaces().Get(nsName)
+func (plugin *NeutronNetworkPlugin) getNetworkOfPod(nsName, podName string) (*types.Network, error) {
+	// get pod info
+	pod, err := plugin.client.Core().Pods(nsName).Get(podName)
 	if err != nil {
-		glog.Errorf("Couldn't get info of namespace %s: %v", nsName, err)
+		glog.Errorf("Couldn't get info of pod %s: %v", podName, err)
 		return nil, err
 	}
-	if namespace.Spec.Network == "" {
-		glog.Warningf("There is no network associated with namespace %s", nsName)
-		return nil, nil
+	subnetID, ok := pod.ObjectMeta.Annotations["nephele/subnetID"]
+	if ok == false {
+		glog.Errorf("There is no subnet associated with pod %s", podName)
+		err := errors.New("There is no subnet associated with this pod")
+		return nil, err
 	}
-
-	// get network of namespace
-	network, err := plugin.client.Core().Networks().Get(namespace.Spec.Network)
+	//get subnet info by subnetID
+	subnet, err := plugin.subnetClient.GetSubnet(
+		context.Background(),
+		&types.GetSubnetRequest{
+			SubnetID: subnetID,
+		},
+	)
 	if err != nil {
-		glog.Errorf("Couldn't get network for namespace %s: %v", namespace.Name, err)
+		glog.Errorf("GetSubnet failed: %v", err)
+		return nil, err
+	}
+	//get network info by networkID
+	network, err := plugin.networkClient.GetNetwork(
+		context.Background(),
+		&types.GetNetworkRequest{
+			Id: subnet.Subnet.NetworkID,
+		},
+	)
+	if err != nil {
+		glog.Errorf("GetNetwork failed: %v", err)
 		return nil, err
 	}
 
-	var networkInfo *types.Network
-	if network.Spec.ProviderNetworkID != "" {
-		networkInfo, err = plugin.provider.Networks().GetNetworkByID(network.Spec.ProviderNetworkID)
-	} else {
-		networkName := networkprovider.BuildNetworkName(network.Name, network.Spec.TenantID)
-		networkInfo, err = plugin.provider.Networks().GetNetwork(networkName)
-	}
-	if err != nil {
-		glog.Errorf("Couldn't get network info from networkprovider: %v", err)
-		return nil, err
-	}
-
-	return networkInfo, nil
-}*/
+	return network.Network, nil
+}
 
 // Name returns the plugin's name. This will be used when searching
 // for a plugin by name, e.g.
@@ -112,26 +123,26 @@ func (plugin *NeutronNetworkPlugin) Capabilities() utilsets.Int {
 // the pod has been created but before the other containers of the
 // pod are launched.
 func (plugin *NeutronNetworkPlugin) SetUpPod(namespace string, name string, podInfraContainerID kubecontainer.ContainerID, containerRuntime string) error {
-	/*network, err := plugin.getNetworkOfNamespace(namespace)
+	// get pod info
+	pod, err := plugin.client.Core().Pods(namespace).Get(name)
 	if err != nil {
-		glog.Errorf("GetNetworkOfNamespace failed: %v", err)
+		glog.Errorf("Couldn't get info of pod %s: %v", name, err)
 		return err
 	}
-
-	if network == nil {
-		glog.V(4).Infof("Network of namespace %s is nil, do nothing", namespace)
-		return nil
-	}*/
-
-	testnet, err := plugin.networkClient.GetNetwork(
-		context.Background(),
-		&types.GetNetworkRequest{
-			Id: "d9aa68d1-5e77-4e47-b4b6-0b56fe85c2af",
-		},
-	)
-	if err != nil {
-		glog.Errorf("GetNetwork failed: %v", err)
+	subnetID, ok := pod.ObjectMeta.Annotations["nephele/subnetID"]
+	if ok == false {
+		glog.Errorf("There is no subnet associated with pod %s", name)
+		err := errors.New("There is no subnet associated with pod")
 		return err
+	}
+	network, err := plugin.getNetworkOfPod(namespace, name)
+	if err != nil {
+		glog.Errorf("GetNetworkOfPod failed: %v", err)
+		return err
+	}
+	if network == nil {
+		glog.V(4).Infof("Network of pod %s is nil, do nothing", name)
+		return nil
 	}
 
 	resp, err := plugin.podClient.SetupPod(
@@ -141,7 +152,8 @@ func (plugin *NeutronNetworkPlugin) SetUpPod(namespace string, name string, podI
 			Namespace:           namespace,
 			PodInfraContainerID: podInfraContainerID.ID,
 			ContainerRuntime:    containerRuntime,
-			Network:             testnet.Network,
+			Network:             network,
+			SubnetID:            subnetID,
 		},
 	)
 	if err != nil || resp.Error != "" {
@@ -157,26 +169,14 @@ func (plugin *NeutronNetworkPlugin) SetUpPod(namespace string, name string, podI
 
 // TearDownPod is the method called before a pod's infra container will be deleted
 func (plugin *NeutronNetworkPlugin) TearDownPod(namespace string, name string, podInfraContainerID kubecontainer.ContainerID, containerRuntime string) error {
-	/*network, err := plugin.getNetworkOfNamespace(namespace)
+	network, err := plugin.getNetworkOfPod(namespace, name)
 	if err != nil {
-		glog.Errorf("GetNetworkOfNamespace failed: %v", err)
+		glog.Errorf("GetNetworkOfPod failed: %v", err)
 		return err
 	}
-
 	if network == nil {
-		glog.V(4).Infof("Network of namespace %s is nil, do nothing", namespace)
+		glog.V(4).Infof("Network of pod %s is nil, do nothing", name)
 		return nil
-	}*/
-
-	testnet, err := plugin.networkClient.GetNetwork(
-		context.Background(),
-		&types.GetNetworkRequest{
-			Id: "d9aa68d1-5e77-4e47-b4b6-0b56fe85c2af",
-		},
-	)
-	if err != nil {
-		glog.Errorf("GetNetwork failed: %v", err)
-		return err
 	}
 
 	resp, err := plugin.podClient.TeardownPod(
@@ -186,7 +186,7 @@ func (plugin *NeutronNetworkPlugin) TearDownPod(namespace string, name string, p
 			Namespace:           namespace,
 			PodInfraContainerID: podInfraContainerID.ID,
 			ContainerRuntime:    containerRuntime,
-			Network:             testnet.Network,
+			Network:             network,
 		},
 	)
 	if err != nil || resp.Error != "" {
@@ -201,27 +201,14 @@ func (plugin *NeutronNetworkPlugin) TearDownPod(namespace string, name string, p
 }
 
 func (plugin *NeutronNetworkPlugin) GetPodNetworkStatus(namespace string, name string, podInfraContainerID kubecontainer.ContainerID, containerRuntime string) (*network.PodNetworkStatus, error) {
-	/*networkInfo, err := plugin.getNetworkOfNamespace(namespace)
+	podnetwork, err := plugin.getNetworkOfPod(namespace, name)
 	if err != nil {
-		glog.Errorf("GetNetworkOfNamespace failed: %v", err)
+		glog.Errorf("GetNetworkOfPod failed: %v", err)
 		return nil, err
 	}
-
-	if networkInfo == nil {
-		glog.V(4).Infof("Network of namespace %s is nil, do nothing", namespace)
+	if podnetwork == nil {
+		glog.V(4).Infof("Network of pod %s is nil, do nothing", name)
 		return nil, nil
-	}*/
-
-	testnet, err := plugin.networkClient.GetNetwork(
-		context.Background(),
-		&types.GetNetworkRequest{
-			Id: "d9aa68d1-5e77-4e47-b4b6-0b56fe85c2af",
-		},
-	)
-
-	if err != nil {
-		glog.Errorf("GetNetwork failed: %v", err)
-		return nil, err
 	}
 	resp, err := plugin.podClient.PodStatus(
 		context.Background(),
@@ -230,7 +217,7 @@ func (plugin *NeutronNetworkPlugin) GetPodNetworkStatus(namespace string, name s
 			Namespace:           namespace,
 			PodInfraContainerID: podInfraContainerID.ID,
 			ContainerRuntime:    containerRuntime,
-			Network:             testnet.Network,
+			Network:             podnetwork,
 		},
 	)
 	if err != nil || resp.Error != "" {
