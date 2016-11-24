@@ -1539,6 +1539,23 @@ func (dm *DockerManager) runContainerInPod(pod *api.Pod, container *api.Containe
 	if err = dm.os.Symlink(containerLogFile, symlinkFile); err != nil {
 		glog.Errorf("Failed to create symbolic link to the log file of pod %q container %q: %v", format.Pod(pod), container.Name, err)
 	}
+	//softlink used to get the pod's name which used to collect logs to Elasticsearch
+	//var/lib/kubelet/pods/+podUID+/volumes/kubernetes.io~empty-dir/data/*->/var/log/containers/applog.podName.containerName.id.log
+	for i := 0; i < len(pod.Spec.Volumes); i++ {
+		if pod.Spec.Volumes[i].EmptyDir != nil {
+			emptydirname := pod.Spec.Volumes[i].Name
+			cname := container.Name
+			str := "logdir" + cname
+			if emptydirname == str && cname != "POD" {
+				podUID := kubecontainer.GetPodUID(pod)
+				containerLogFile_emptdir := path.Join("/var/lib/kubelet/pods", podUID, "volumes/kubernetes.io~empty-dir", emptydirname)
+				symlinkFile_emptdir := LogSymlink_emptdir(dm.containerLogsDir, kubecontainer.GetPodFullName(pod), container.Name, id.ID)
+				if err = dm.os.Symlink(containerLogFile_emptdir, symlinkFile_emptdir); err != nil {
+					glog.Errorf("Failed to create symbolic link to the application's log file of pod %q container %q: %v", format.Pod(pod), container.Name, err)
+				}
+			}
+		}
+	}
 
 	// Check if current docker version is higher than 1.10. Otherwise, we have to apply OOMScoreAdj instead of using docker API.
 	// TODO: Remove this logic after we stop supporting docker version < 1.10.
