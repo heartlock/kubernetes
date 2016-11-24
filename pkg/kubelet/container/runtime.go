@@ -487,6 +487,11 @@ func GetPodFullName(pod *api.Pod) string {
 	return pod.Name + "_" + pod.Namespace
 }
 
+// GetPodUID returns a UID that uniquely identifies a pod.
+func GetPodUID(pod *api.Pod) string {
+	return string(pod.UID)
+}
+
 // Build the pod full name from pod name and namespace.
 func BuildPodFullName(name, namespace string) string {
 	return name + "_" + namespace
