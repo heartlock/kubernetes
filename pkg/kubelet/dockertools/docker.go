@@ -299,6 +299,9 @@ func ParseDockerName(name string) (dockerName *KubeletContainerName, hash uint64
 func LogSymlink(containerLogsDir, podFullName, containerName, dockerId string) string {
 	return path.Join(containerLogsDir, fmt.Sprintf("%s_%s-%s.%s", podFullName, containerName, dockerId, LogSuffix))
 }
+func LogSymlink_emptdir(containerLogsDir, podFullName, containerName, dockerId string) string {
+	return path.Join(containerLogsDir, fmt.Sprintf("applog.%s.%s.%s.%s", podFullName, containerName, dockerId, LogSuffix))
+}
 
 // Get a *dockerapi.Client, either using the endpoint passed in, or using
 // DOCKER_HOST, DOCKER_TLS_VERIFY, and DOCKER_CERT path per their spec

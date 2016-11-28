@@ -69,16 +69,16 @@ func (plugin *NeutronNetworkPlugin) Init(host network.Host, hairpinMode componen
 	return nil
 }
 
-func (plugin *NeutronNetworkPlugin) getNetworkOfPod(nsName, podName string) (*types.Network, error) {
-	// get pod info
-	pod, err := plugin.client.Core().Pods(nsName).Get(podName)
+func (plugin *NeutronNetworkPlugin) getNetworkOfPod(nsName string) (*types.Network, error) {
+	// get namespace info
+	namespace, err := plugin.client.Core().Namespaces().Get(nsName)
 	if err != nil {
-		glog.Errorf("Couldn't get info of pod %s: %v", podName, err)
+		glog.Errorf("Couldn't get info of namespace %s: %v", namespace, err)
 		return nil, err
 	}
-	subnetID, ok := pod.ObjectMeta.Annotations["nephele/subnetID"]
+	subnetID, ok := namespace.ObjectMeta.Annotations["nephele/subnetID"]
 	if ok == false {
-		glog.Errorf("There is no subnet associated with pod %s", podName)
+		glog.Errorf("There is no subnet associated with namespace %s", namespace)
 		err := errors.New("There is no subnet associated with this pod")
 		return nil, err
 	}
@@ -124,18 +124,18 @@ func (plugin *NeutronNetworkPlugin) Capabilities() utilsets.Int {
 // pod are launched.
 func (plugin *NeutronNetworkPlugin) SetUpPod(namespace string, name string, podInfraContainerID kubecontainer.ContainerID, containerRuntime string) error {
 	// get pod info
-	pod, err := plugin.client.Core().Pods(namespace).Get(name)
+	nsName, err := plugin.client.Core().Namespaces().Get(namespace)
 	if err != nil {
-		glog.Errorf("Couldn't get info of pod %s: %v", name, err)
+		glog.Errorf("Couldn't get info of namespace %s: %v", nsName, err)
 		return err
 	}
-	subnetID, ok := pod.ObjectMeta.Annotations["nephele/subnetID"]
+	subnetID, ok := nsName.ObjectMeta.Annotations["nephele/subnetID"]
 	if ok == false {
-		glog.Errorf("There is no subnet associated with pod %s", name)
+		glog.Errorf("There is no subnet associated with namespace %s", nsName)
 		err := errors.New("There is no subnet associated with pod")
 		return err
 	}
-	network, err := plugin.getNetworkOfPod(namespace, name)
+	network, err := plugin.getNetworkOfPod(namespace)
 	if err != nil {
 		glog.Errorf("GetNetworkOfPod failed: %v", err)
 		return err
@@ -169,7 +169,7 @@ func (plugin *NeutronNetworkPlugin) SetUpPod(namespace string, name string, podI
 
 // TearDownPod is the method called before a pod's infra container will be deleted
 func (plugin *NeutronNetworkPlugin) TearDownPod(namespace string, name string, podInfraContainerID kubecontainer.ContainerID, containerRuntime string) error {
-	network, err := plugin.getNetworkOfPod(namespace, name)
+	network, err := plugin.getNetworkOfPod(namespace)
 	if err != nil {
 		glog.Errorf("GetNetworkOfPod failed: %v", err)
 		return err
@@ -201,7 +201,7 @@ func (plugin *NeutronNetworkPlugin) TearDownPod(namespace string, name string, p
 }
 
 func (plugin *NeutronNetworkPlugin) GetPodNetworkStatus(namespace string, name string, podInfraContainerID kubecontainer.ContainerID, containerRuntime string) (*network.PodNetworkStatus, error) {
-	podnetwork, err := plugin.getNetworkOfPod(namespace, name)
+	podnetwork, err := plugin.getNetworkOfPod(namespace)
 	if err != nil {
 		glog.Errorf("GetNetworkOfPod failed: %v", err)
 		return nil, err
