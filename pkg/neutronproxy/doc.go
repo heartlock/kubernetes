@@ -15,4 +15,4 @@ limitations under the License.
 */
 
 // Package proxy implements the layer-3 network proxy.
-package neutron-proxy
+package neutronproxy

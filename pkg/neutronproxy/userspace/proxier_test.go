@@ -32,7 +32,7 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/proxy"
 	"k8s.io/kubernetes/pkg/types"
-	ipttest "k8s.io/kubernetes/pkg/util/iptables/testing"
+	ipttest "k8s.io/kubernetes/pkg/util/neutroniptables/testing"
 	"k8s.io/kubernetes/pkg/util/runtime"
 )
 

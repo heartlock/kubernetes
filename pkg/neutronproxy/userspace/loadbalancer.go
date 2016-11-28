@@ -20,7 +20,7 @@ import (
 	"net"
 
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/neutron-proxy"
+	"k8s.io/kubernetes/pkg/proxy"
 )
 
 // LoadBalancer is an interface for distributing incoming requests to service endpoints.
