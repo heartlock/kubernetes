@@ -44,30 +44,30 @@ type Interface interface {
 	// GetVersion returns the "X.Y.Z" semver string for iptables.
 	GetVersion() (string, error)
 	// EnsureChain checks if the specified chain exists and, if not, creates it.  If the chain existed, return true.
-	EnsureChain(table Table, chain Chain) (bool, error)
+	EnsureChain(routerns string, table Table, chain Chain) (bool, error)
 	// FlushChain clears the specified chain.  If the chain did not exist, return error.
-	FlushChain(table Table, chain Chain) error
+	FlushChain(routerns string, table Table, chain Chain) error
 	// DeleteChain deletes the specified chain.  If the chain did not exist, return error.
-	DeleteChain(table Table, chain Chain) error
+	DeleteChain(routerns string, table Table, chain Chain) error
 	// EnsureRule checks if the specified rule is present and, if not, creates it.  If the rule existed, return true.
-	EnsureRule(position RulePosition, table Table, chain Chain, args ...string) (bool, error)
+	EnsureRule(routerns string, position RulePosition, table Table, chain Chain, args ...string) (bool, error)
 	// DeleteRule checks if the specified rule is present and, if so, deletes it.
-	DeleteRule(table Table, chain Chain, args ...string) error
+	DeleteRule(routerns string, table Table, chain Chain, args ...string) error
 	// IsIpv6 returns true if this is managing ipv6 tables
 	IsIpv6() bool
 	// TODO: (BenTheElder) Unit-Test Save/SaveAll, Restore/RestoreAll
 	// Save calls `iptables-save` for table.
-	Save(table Table) ([]byte, error)
+	Save(routerns string, table Table) ([]byte, error)
 	// SaveAll calls `iptables-save`.
-	SaveAll() ([]byte, error)
+	SaveAll(routerns string) ([]byte, error)
 	// Restore runs `iptables-restore` passing data through a temporary file.
 	// table is the Table to restore
 	// data should be formatted like the output of Save()
 	// flush sets the presence of the "--noflush" flag. see: FlushFlag
 	// counters sets the "--counters" flag. see: RestoreCountersFlag
-	Restore(table Table, data []byte, flush FlushFlag, counters RestoreCountersFlag) error
+	Restore(routerns string, table Table, data []byte, flush FlushFlag, counters RestoreCountersFlag) error
 	// RestoreAll is the same as Restore except that no table is specified.
-	RestoreAll(data []byte, flush FlushFlag, counters RestoreCountersFlag) error
+	RestoreAll(routerns string, data []byte, flush FlushFlag, counters RestoreCountersFlag) error
 	// AddReloadFunc adds a function to call on iptables reload
 	AddReloadFunc(reloadFunc func())
 	// Destroy cleans up resources used by the Interface
@@ -196,13 +196,13 @@ func (runner *runner) GetVersion() (string, error) {
 }
 
 // EnsureChain is part of Interface.
-func (runner *runner) EnsureChain(table Table, chain Chain) (bool, error) {
+func (runner *runner) EnsureChain(routerns string, table Table, chain Chain) (bool, error) {
 	fullArgs := makeFullArgs(table, chain)
 
 	runner.mu.Lock()
 	defer runner.mu.Unlock()
 
-	out, err := runner.run(opCreateChain, fullArgs)
+	out, err := runner.run(routerns, opCreateChain, fullArgs)
 	if err != nil {
 		if ee, ok := err.(utilexec.ExitError); ok {
 			if ee.Exited() && ee.ExitStatus() == 1 {
@@ -215,13 +215,13 @@ func (runner *runner) EnsureChain(table Table, chain Chain) (bool, error) {
 }
 
 // FlushChain is part of Interface.
-func (runner *runner) FlushChain(table Table, chain Chain) error {
+func (runner *runner) FlushChain(routerns string, table Table, chain Chain) error {
 	fullArgs := makeFullArgs(table, chain)
 
 	runner.mu.Lock()
 	defer runner.mu.Unlock()
 
-	out, err := runner.run(opFlushChain, fullArgs)
+	out, err := runner.run(routerns, opFlushChain, fullArgs)
 	if err != nil {
 		return fmt.Errorf("error flushing chain %q: %v: %s", chain, err, out)
 	}
@@ -229,14 +229,14 @@ func (runner *runner) FlushChain(table Table, chain Chain) error {
 }
 
 // DeleteChain is part of Interface.
-func (runner *runner) DeleteChain(table Table, chain Chain) error {
+func (runner *runner) DeleteChain(routerns string, table Table, chain Chain) error {
 	fullArgs := makeFullArgs(table, chain)
 
 	runner.mu.Lock()
 	defer runner.mu.Unlock()
 
 	// TODO: we could call iptables -S first, ignore the output and check for non-zero return (more like DeleteRule)
-	out, err := runner.run(opDeleteChain, fullArgs)
+	out, err := runner.run(routerns, opDeleteChain, fullArgs)
 	if err != nil {
 		return fmt.Errorf("error deleting chain %q: %v: %s", chain, err, out)
 	}
@@ -244,20 +244,20 @@ func (runner *runner) DeleteChain(table Table, chain Chain) error {
 }
 
 // EnsureRule is part of Interface.
-func (runner *runner) EnsureRule(position RulePosition, table Table, chain Chain, args ...string) (bool, error) {
+func (runner *runner) EnsureRule(routerns string, position RulePosition, table Table, chain Chain, args ...string) (bool, error) {
 	fullArgs := makeFullArgs(table, chain, args...)
 
 	runner.mu.Lock()
 	defer runner.mu.Unlock()
 
-	exists, err := runner.checkRule(table, chain, args...)
+	exists, err := runner.checkRule(routerns, table, chain, args...)
 	if err != nil {
 		return false, err
 	}
 	if exists {
 		return true, nil
 	}
-	out, err := runner.run(operation(position), fullArgs)
+	out, err := runner.run(routerns, operation(position), fullArgs)
 	if err != nil {
 		return false, fmt.Errorf("error appending rule: %v: %s", err, out)
 	}
@@ -265,20 +265,20 @@ func (runner *runner) EnsureRule(position RulePosition, table Table, chain Chain
 }
 
 // DeleteRule is part of Interface.
-func (runner *runner) DeleteRule(table Table, chain Chain, args ...string) error {
+func (runner *runner) DeleteRule(routerns string, table Table, chain Chain, args ...string) error {
 	fullArgs := makeFullArgs(table, chain, args...)
 
 	runner.mu.Lock()
 	defer runner.mu.Unlock()
 
-	exists, err := runner.checkRule(table, chain, args...)
+	exists, err := runner.checkRule(routerns, table, chain, args...)
 	if err != nil {
 		return err
 	}
 	if !exists {
 		return nil
 	}
-	out, err := runner.run(opDeleteRule, fullArgs)
+	out, err := runner.run(routerns, opDeleteRule, fullArgs)
 	if err != nil {
 		return fmt.Errorf("error deleting rule: %v: %s", err, out)
 	}
@@ -290,42 +290,44 @@ func (runner *runner) IsIpv6() bool {
 }
 
 // Save is part of Interface.
-func (runner *runner) Save(table Table) ([]byte, error) {
+func (runner *runner) Save(routerns string, table Table) ([]byte, error) {
 	runner.mu.Lock()
 	defer runner.mu.Unlock()
 
 	// run and return
-	args := []string{"-t", string(table)}
+	args := []string{"netns", "exec", routerns, cmdIptablesSave, "-t", string(table)}
 	glog.V(4).Infof("running iptables-save %v", args)
-	return runner.exec.Command(cmdIptablesSave, args...).CombinedOutput()
+	return runner.exec.Command("ip", args...).CombinedOutput()
 }
 
 // SaveAll is part of Interface.
-func (runner *runner) SaveAll() ([]byte, error) {
+func (runner *runner) SaveAll(routerns string) ([]byte, error) {
 	runner.mu.Lock()
 	defer runner.mu.Unlock()
 
+	args := []string{"netns", "exec", routerns, cmdIptablesSave}
+
 	// run and return
 	glog.V(4).Infof("running iptables-save")
-	return runner.exec.Command(cmdIptablesSave, []string{}...).CombinedOutput()
+	return runner.exec.Command("ip", args...).CombinedOutput()
 }
 
 // Restore is part of Interface.
-func (runner *runner) Restore(table Table, data []byte, flush FlushFlag, counters RestoreCountersFlag) error {
+func (runner *runner) Restore(routerns string, table Table, data []byte, flush FlushFlag, counters RestoreCountersFlag) error {
 	// setup args
 	args := []string{"-T", string(table)}
-	return runner.restoreInternal(args, data, flush, counters)
+	return runner.restoreInternal(routerns, args, data, flush, counters)
 }
 
 // RestoreAll is part of Interface.
-func (runner *runner) RestoreAll(data []byte, flush FlushFlag, counters RestoreCountersFlag) error {
+func (runner *runner) RestoreAll(routerns string, data []byte, flush FlushFlag, counters RestoreCountersFlag) error {
 	// setup args
 	args := make([]string, 0)
-	return runner.restoreInternal(args, data, flush, counters)
+	return runner.restoreInternal(routerns, args, data, flush, counters)
 }
 
 // restoreInternal is the shared part of Restore/RestoreAll
-func (runner *runner) restoreInternal(args []string, data []byte, flush FlushFlag, counters RestoreCountersFlag) error {
+func (runner *runner) restoreInternal(routerns string, args []string, data []byte, flush FlushFlag, counters RestoreCountersFlag) error {
 	runner.mu.Lock()
 	defer runner.mu.Unlock()
 
@@ -355,9 +357,12 @@ func (runner *runner) restoreInternal(args []string, data []byte, flush FlushFla
 	if err != nil {
 		return err
 	}
+	preargs := []string{"netns", "exec", routerns, cmdIptablesRestore}
+
+	args = append(preargs, args...)
 	// run the command and return the output or an error including the output and error
 	glog.V(4).Infof("running iptables-restore %v", args)
-	b, err := runner.exec.Command(cmdIptablesRestore, args...).CombinedOutput()
+	b, err := runner.exec.Command("ip", args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%v (%s)", err, b)
 	}
@@ -372,32 +377,34 @@ func (runner *runner) iptablesCommand() string {
 	}
 }
 
-func (runner *runner) run(op operation, args []string) ([]byte, error) {
+func (runner *runner) run(routerns string, op operation, args []string) ([]byte, error) {
 	iptablesCmd := runner.iptablesCommand()
-
-	fullArgs := append(runner.waitFlag, string(op))
+	fullArgs := []string{"netns", "exec", routerns, iptablesCmd}
+	fullArgs = append(runner.waitFlag, string(op))
 	fullArgs = append(fullArgs, args...)
 	glog.V(4).Infof("running iptables %s %v", string(op), args)
-	return runner.exec.Command(iptablesCmd, fullArgs...).CombinedOutput()
+	return runner.exec.Command("ip", fullArgs...).CombinedOutput()
 	// Don't log err here - callers might not think it is an error.
 }
 
 // Returns (bool, nil) if it was able to check the existence of the rule, or
 // (<undefined>, error) if the process of checking failed.
-func (runner *runner) checkRule(table Table, chain Chain, args ...string) (bool, error) {
+func (runner *runner) checkRule(routerns string, table Table, chain Chain, args ...string) (bool, error) {
 	if runner.hasCheck {
-		return runner.checkRuleUsingCheck(makeFullArgs(table, chain, args...))
+		return runner.checkRuleUsingCheck(routerns, makeFullArgs(table, chain, args...))
 	} else {
-		return runner.checkRuleWithoutCheck(table, chain, args...)
+		return runner.checkRuleWithoutCheck(routerns, table, chain, args...)
 	}
 }
 
 // Executes the rule check without using the "-C" flag, instead parsing iptables-save.
 // Present for compatibility with <1.4.11 versions of iptables.  This is full
 // of hack and half-measures.  We should nix this ASAP.
-func (runner *runner) checkRuleWithoutCheck(table Table, chain Chain, args ...string) (bool, error) {
+func (runner *runner) checkRuleWithoutCheck(routerns string, table Table, chain Chain, args ...string) (bool, error) {
 	glog.V(1).Infof("running iptables-save -t %s", string(table))
-	out, err := runner.exec.Command(cmdIptablesSave, "-t", string(table)).CombinedOutput()
+
+	saveargs := []string{"netns", "exec", routerns, cmdIptablesSave, "-t", string(table)}
+	out, err := runner.exec.Command("ip", saveargs...).CombinedOutput()
 	if err != nil {
 		return false, fmt.Errorf("error checking rule: %v", err)
 	}
@@ -440,8 +447,8 @@ func (runner *runner) checkRuleWithoutCheck(table Table, chain Chain, args ...st
 }
 
 // Executes the rule check using the "-C" flag
-func (runner *runner) checkRuleUsingCheck(args []string) (bool, error) {
-	out, err := runner.run(opCheckRule, args)
+func (runner *runner) checkRuleUsingCheck(routerns string, args []string) (bool, error) {
+	out, err := runner.run(routerns, opCheckRule, args)
 	if err == nil {
 		return true, nil
 	}

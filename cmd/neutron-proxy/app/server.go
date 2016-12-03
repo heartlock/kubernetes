@@ -22,11 +22,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
 	_ "net/http/pprof"
 	"runtime"
-	"strconv"
-	"time"
 
 	"k8s.io/kubernetes/cmd/neutron-proxy/app/options"
 	"k8s.io/kubernetes/pkg/api"
@@ -34,20 +31,17 @@ import (
 	kubeclient "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/client/unversioned/clientcmd"
 	clientcmdapi "k8s.io/kubernetes/pkg/client/unversioned/clientcmd/api"
-	"k8s.io/kubernetes/pkg/neutron-proxy"
-	proxyconfig "k8s.io/kubernetes/pkg/neutron-proxy/config"
-	"k8s.io/kubernetes/pkg/neutron-proxy/iptables"
-	"k8s.io/kubernetes/pkg/neutron-proxy/userspace"
+	proxyconfig "k8s.io/kubernetes/pkg/neutronproxy/config"
+	"k8s.io/kubernetes/pkg/neutronproxy/iptables"
+	"k8s.io/kubernetes/pkg/proxy"
 	"k8s.io/kubernetes/pkg/types"
 	"k8s.io/kubernetes/pkg/util"
 	"k8s.io/kubernetes/pkg/util/configz"
 	utildbus "k8s.io/kubernetes/pkg/util/dbus"
 	"k8s.io/kubernetes/pkg/util/exec"
-	utilnet "k8s.io/kubernetes/pkg/util/net"
-	utiliptables "k8s.io/kubernetes/pkg/util/neutron-iptables"
+	utiliptables "k8s.io/kubernetes/pkg/util/neutroniptables"
 	nodeutil "k8s.io/kubernetes/pkg/util/node"
 	"k8s.io/kubernetes/pkg/util/oom"
-	"k8s.io/kubernetes/pkg/util/wait"
 
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
@@ -74,7 +68,7 @@ const (
 
 func checkKnownProxyMode(proxyMode string) bool {
 	switch proxyMode {
-	case "", proxyModeUserspace, proxyModeIptables:
+	case "", proxyModeIptables:
 		return true
 	}
 	return false
@@ -87,7 +81,7 @@ func NewProxyServer(
 	proxier proxy.ProxyProvider,
 	broadcaster record.EventBroadcaster,
 	recorder record.EventRecorder,
-	conntracker Conntracker,
+	//conntracker Conntracker,
 	proxyMode string,
 ) (*ProxyServer, error) {
 	return &ProxyServer{
@@ -97,8 +91,8 @@ func NewProxyServer(
 		Proxier:      proxier,
 		Broadcaster:  broadcaster,
 		Recorder:     recorder,
-		Conntracker:  conntracker,
-		ProxyMode:    proxyMode,
+		//Conntracker:  conntracker,
+		ProxyMode: proxyMode,
 	}, nil
 }
 
@@ -156,7 +150,7 @@ func NewProxyServerDefault(config *options.ProxyServerConfig) (*ProxyServer, err
 		}
 	}
 
-	if config.ResourceContainer != "" {
+	if config.ResourceContainer != "" { //尚不支持
 		// Run in its own container.
 		if err := util.RunInResourceContainer(config.ResourceContainer); err != nil {
 			glog.Warningf("Failed to start in resource-only container %q: %v", config.ResourceContainer, err)
@@ -198,7 +192,9 @@ func NewProxyServerDefault(config *options.ProxyServerConfig) (*ProxyServer, err
 	var endpointsHandler proxyconfig.EndpointsConfigHandler
 
 	proxyMode := getProxyMode(string(config.Mode), client.Nodes(), hostname, iptInterface, iptables.LinuxKernelCompatTester{})
-	if proxyMode == proxyModeIptables {
+	//****************************
+
+	if proxyMode == proxyModeIptables { // 目前只support iptables mode
 		glog.V(0).Info("Using iptables Proxier.")
 		if config.IPTablesMasqueradeBit == nil {
 			// IPTablesMasqueradeBit must be specified or defaulted.
@@ -213,8 +209,10 @@ func NewProxyServerDefault(config *options.ProxyServerConfig) (*ProxyServer, err
 		endpointsHandler = proxierIptables
 		// No turning back. Remove artifacts that might still exist from the userspace Proxier.
 		glog.V(0).Info("Tearing down userspace rules.")
-		userspace.CleanupLeftovers(iptInterface)
-	} else {
+		//	userspace.CleanupLeftovers(iptInterface)
+
+		//*******************
+	} /*else {
 		glog.V(0).Info("Using userspace Proxier.")
 		// This is a proxy.LoadBalancer which NewProxier needs but has methods we don't need for
 		// our config.EndpointsConfigHandler.
@@ -237,20 +235,20 @@ func NewProxyServerDefault(config *options.ProxyServerConfig) (*ProxyServer, err
 		// Remove artifacts from the pure-iptables Proxier.
 		glog.V(0).Info("Tearing down pure-iptables proxy rules.")
 		iptables.CleanupLeftovers(iptInterface)
-	}
+	}*/
 	iptInterface.AddReloadFunc(proxier.Sync)
 
 	// Create configs (i.e. Watches for Services and Endpoints)
 	// Note: RegisterHandler() calls need to happen before creation of Sources because sources
 	// only notify on changes, and the initial update (on process start) may be lost if no handlers
 	// are registered yet.
-	serviceConfig := proxyconfig.NewServiceConfig()
+	serviceConfig := proxyconfig.NewServiceConfig() // watches for srevice,为其注册处理函数OnServiceUpdate()
 	serviceConfig.RegisterHandler(proxier)
 
-	endpointsConfig := proxyconfig.NewEndpointsConfig()
+	endpointsConfig := proxyconfig.NewEndpointsConfig() // watches for endpoints,为其注册处理函数OnEndpointUpdate()
 	endpointsConfig.RegisterHandler(endpointsHandler)
 
-	proxyconfig.NewSourceAPI(
+	proxyconfig.NewSourceAPI( // watch
 		client,
 		config.ConfigSyncPeriod,
 		serviceConfig.Channel("api"),
@@ -264,17 +262,17 @@ func NewProxyServerDefault(config *options.ProxyServerConfig) (*ProxyServer, err
 		Namespace: "",
 	}
 
-	conntracker := realConntracker{}
+	//conntracker := realConntracker{} 目前不支持
 
-	return NewProxyServer(client, config, iptInterface, proxier, eventBroadcaster, recorder, conntracker, proxyMode)
+	return NewProxyServer(client, config, iptInterface, proxier, eventBroadcaster, recorder, proxyMode)
 }
 
 // Run runs the specified ProxyServer.  This should never exit (unless CleanupAndExit is set).
 func (s *ProxyServer) Run() error {
 	// remove iptables rules and exit
 	if s.Config.CleanupAndExit {
-		encounteredError := userspace.CleanupLeftovers(s.IptInterface)
-		encounteredError = iptables.CleanupLeftovers(s.IptInterface) || encounteredError
+		//encounteredError := userspace.CleanupLeftovers(s.IptInterface)
+		encounteredError := iptables.CleanupLeftovers(s.IptInterface)
 		if encounteredError {
 			return errors.New("Encountered an error while tearing down rules.")
 		}
@@ -284,7 +282,7 @@ func (s *ProxyServer) Run() error {
 	s.Broadcaster.StartRecordingToSink(s.Client.Events(""))
 
 	// Start up a webserver if requested
-	if s.Config.HealthzPort > 0 {
+	/*if s.Config.HealthzPort > 0 {
 		http.HandleFunc("/proxyMode", func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "%s", s.ProxyMode)
 		})
@@ -324,7 +322,7 @@ func (s *ProxyServer) Run() error {
 				return err
 			}
 		}
-	}
+	} */
 
 	// Birth Cry after the birth is successful
 	s.birthCry()

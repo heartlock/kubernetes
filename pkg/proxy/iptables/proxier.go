@@ -668,7 +668,7 @@ func (proxier *Proxier) syncProxyRules() {
 			{utiliptables.TableNAT, utiliptables.ChainPrerouting},
 		}
 		comment := "kubernetes service portals"
-		args := []string{"-m", "comment", "--comment", comment, "-j", string(kubeServicesChain)}
+		args := []string{"-m", "comment", "--comment", comment, "-j", string(kubeServicesChain)} //
 		for _, tc := range tableChainsNeedJumpServices {
 			if _, err := proxier.iptables.EnsureRule(utiliptables.Prepend, tc.table, tc.chain, args...); err != nil {
 				glog.Errorf("Failed to ensure that %s chain %s jumps to %s: %v", tc.table, tc.chain, kubeServicesChain, err)
