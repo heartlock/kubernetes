@@ -380,8 +380,10 @@ func (runner *runner) iptablesCommand() string {
 func (runner *runner) run(routerns string, op operation, args []string) ([]byte, error) {
 	iptablesCmd := runner.iptablesCommand()
 	fullArgs := []string{"netns", "exec", routerns, iptablesCmd}
-	fullArgs = append(runner.waitFlag, string(op))
+	fullArgs = append(fullArgs, runner.waitFlag...)
+	fullArgs = append(fullArgs, string(op))
 	fullArgs = append(fullArgs, args...)
+	fmt.Println(fullArgs)
 	glog.V(4).Infof("running iptables %s %v", string(op), args)
 	return runner.exec.Command("ip", fullArgs...).CombinedOutput()
 	// Don't log err here - callers might not think it is an error.

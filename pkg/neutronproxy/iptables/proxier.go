@@ -39,7 +39,8 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"k8s.io/kubernetes/pkg/api"
-	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
+	//clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
+	"k8s.io/kubernetes/pkg/client/unversioned"
 	iptablestypes "k8s.io/kubernetes/pkg/neutronproxy/iptables/types"
 	"k8s.io/kubernetes/pkg/proxy"
 	"k8s.io/kubernetes/pkg/types"
@@ -155,7 +156,7 @@ func newServiceInfo(service proxy.ServicePortName) *serviceInfo {
 // and services that provide the actual backends.
 type Proxier struct {
 	//TODO add interclientset
-	client clientset.Interface
+	client *unversioned.Client
 	//TODO add kubestackclient
 	kubestackClient             iptablestypes.SubnetsClient
 	mu                          sync.Mutex // protects the following fields
@@ -197,7 +198,7 @@ var _ proxy.ProxyProvider = &Proxier{}
 // An error will be returned if iptables fails to update or acquire the initial lock.
 // Once a proxier is created, it will keep iptables up to date in the background and
 // will not terminate if a particular iptables call fails.
-func NewProxier(ipt utiliptables.Interface, exec utilexec.Interface, syncPeriod time.Duration, masqueradeAll bool, masqueradeBit int, clusterCIDR string, addr string) (*Proxier, error) {
+func NewProxier(ipt utiliptables.Interface, exec utilexec.Interface, syncPeriod time.Duration, masqueradeAll bool, masqueradeBit int, clusterCIDR string, addr string, client *unversioned.Client) (*Proxier, error) {
 	// Set the route_localnet sysctl we need for
 	if err := utilsysctl.SetSysctl(sysctlRouteLocalnet, 1); err != nil {
 		return nil, fmt.Errorf("can't set sysctl %s: %v", sysctlRouteLocalnet, err)
@@ -231,6 +232,7 @@ func NewProxier(ipt utiliptables.Interface, exec utilexec.Interface, syncPeriod 
 	kubestackClient := iptablestypes.NewSubnetsClient(conn)
 
 	return &Proxier{
+		client:          client,
 		kubestackClient: kubestackClient,
 		serviceMap:      make(map[proxy.ServicePortName]*serviceInfo),
 		endpointsMap:    make(map[proxy.ServicePortName][]string),
@@ -671,7 +673,15 @@ func (proxier *Proxier) syncProxyRules() {
 	namespaceMap := make(map[string](map[proxy.ServicePortName]*serviceInfo))
 	//divide serviceMap into subMap by namespace
 	for svcName, svcInfo := range proxier.serviceMap {
-		namespaceMap[svcName.Namespace][svcName] = svcInfo
+		submap, ok := namespaceMap[svcName.Namespace]
+		if ok {
+			submap[svcName] = svcInfo
+			namespaceMap[svcName.Namespace] = submap
+		} else {
+			n := make(map[proxy.ServicePortName]*serviceInfo)
+			n[svcName] = svcInfo
+			namespaceMap[svcName.Namespace] = n
+		}
 	}
 
 	// Build rules for each service.
@@ -682,7 +692,10 @@ func (proxier *Proxier) syncProxyRules() {
 		//replacementPortsMap := map[localPort]closeable{}
 
 		//Get routerNS
-		nsName, err := proxier.client.Core().Namespaces().Get(namespace)
+		if namespace == "default" {
+			continue
+		}
+		nsName, err := proxier.client.Namespaces().Get(namespace)
 		if err != nil {
 			glog.Errorf("Couldn't get info of namespace %s: %v", nsName, err)
 			return
