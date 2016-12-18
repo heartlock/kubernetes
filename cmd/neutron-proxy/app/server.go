@@ -49,14 +49,15 @@ import (
 )
 
 type ProxyServer struct {
-	Client       *kubeclient.Client
-	Config       *options.ProxyServerConfig
-	IptInterface utiliptables.Interface
-	Proxier      proxy.ProxyProvider
-	Broadcaster  record.EventBroadcaster
-	Recorder     record.EventRecorder
-	Conntracker  Conntracker // if nil, ignored
-	ProxyMode    string
+	Client          *kubeclient.Client
+	Config          *options.ProxyServerConfig
+	IptInterface    utiliptables.Interface
+	Proxier         proxy.ProxyProvider
+	Broadcaster     record.EventBroadcaster
+	Recorder        record.EventRecorder
+	Conntracker     Conntracker // if nil, ignored
+	ProxyMode       string
+	Networkprovider string
 }
 
 const (
@@ -127,7 +128,6 @@ func NewProxyServerDefault(config *options.ProxyServerConfig) (*ProxyServer, err
 	if net.ParseIP(config.BindAddress).To4() == nil {
 		protocol = utiliptables.ProtocolIpv6
 	}
-
 	// Create a iptables utils.
 	execer := exec.New()
 	dbus := utildbus.New()
@@ -200,13 +200,15 @@ func NewProxyServerDefault(config *options.ProxyServerConfig) (*ProxyServer, err
 			// IPTablesMasqueradeBit must be specified or defaulted.
 			return nil, fmt.Errorf("Unable to read IPTablesMasqueradeBit from config")
 		}
-
-		proxierIptables, err := iptables.NewProxier(iptInterface, execer, config.IPTablesSyncPeriod.Duration, config.MasqueradeAll, int(*config.IPTablesMasqueradeBit), config.ClusterCIDR)
-		if err != nil {
-			glog.Fatalf("Unable to create proxier: %v", err)
+		if config.KubeProxyConfiguration.NetworkProvider != "" {
+			proxierIptables, err := iptables.NewProxier(iptInterface, execer, config.IPTablesSyncPeriod.Duration, config.MasqueradeAll, int(*config.IPTablesMasqueradeBit), config.ClusterCIDR, config.NetworkProvider, client)
+			if err != nil {
+				glog.Fatalf("Unable to create proxier: %v", err)
+			}
+			proxier = proxierIptables
+			endpointsHandler = proxierIptables
 		}
-		proxier = proxierIptables
-		endpointsHandler = proxierIptables
+
 		// No turning back. Remove artifacts that might still exist from the userspace Proxier.
 		glog.V(0).Info("Tearing down userspace rules.")
 		//	userspace.CleanupLeftovers(iptInterface)

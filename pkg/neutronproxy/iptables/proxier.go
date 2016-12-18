@@ -36,7 +36,12 @@ import (
 	"github.com/coreos/go-semver/semver"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/golang/glog"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
 	"k8s.io/kubernetes/pkg/api"
+	//clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
+	"k8s.io/kubernetes/pkg/client/unversioned"
+	iptablestypes "k8s.io/kubernetes/pkg/neutronproxy/iptables/types"
 	"k8s.io/kubernetes/pkg/proxy"
 	"k8s.io/kubernetes/pkg/types"
 	utilexec "k8s.io/kubernetes/pkg/util/exec"
@@ -151,7 +156,9 @@ func newServiceInfo(service proxy.ServicePortName) *serviceInfo {
 // and services that provide the actual backends.
 type Proxier struct {
 	//TODO add interclientset
+	client *unversioned.Client
 	//TODO add kubestackclient
+	kubestackClient             iptablestypes.SubnetsClient
 	mu                          sync.Mutex // protects the following fields
 	serviceMap                  map[proxy.ServicePortName]*serviceInfo
 	endpointsMap                map[proxy.ServicePortName][]string
@@ -191,7 +198,7 @@ var _ proxy.ProxyProvider = &Proxier{}
 // An error will be returned if iptables fails to update or acquire the initial lock.
 // Once a proxier is created, it will keep iptables up to date in the background and
 // will not terminate if a particular iptables call fails.
-func NewProxier(ipt utiliptables.Interface, exec utilexec.Interface, syncPeriod time.Duration, masqueradeAll bool, masqueradeBit int, clusterCIDR string) (*Proxier, error) {
+func NewProxier(ipt utiliptables.Interface, exec utilexec.Interface, syncPeriod time.Duration, masqueradeAll bool, masqueradeBit int, clusterCIDR string, addr string, client *unversioned.Client) (*Proxier, error) {
 	// Set the route_localnet sysctl we need for
 	if err := utilsysctl.SetSysctl(sysctlRouteLocalnet, 1); err != nil {
 		return nil, fmt.Errorf("can't set sysctl %s: %v", sysctlRouteLocalnet, err)
@@ -217,17 +224,25 @@ func NewProxier(ipt utiliptables.Interface, exec utilexec.Interface, syncPeriod 
 	}
 	masqueradeValue := 1 << uint(masqueradeBit)
 	masqueradeMark := fmt.Sprintf("%#08x/%#08x", masqueradeValue, masqueradeValue)
+	//add kubestackClient
+	conn, err := grpc.Dial(addr, grpc.WithInsecure())
+	if err != nil {
+		return nil, fmt.Errorf("Connect network provider %s failed: %v", addr, err)
+	}
+	kubestackClient := iptablestypes.NewSubnetsClient(conn)
 
 	return &Proxier{
-		serviceMap:     make(map[proxy.ServicePortName]*serviceInfo),
-		endpointsMap:   make(map[proxy.ServicePortName][]string),
-		portsMap:       make(map[localPort]closeable),
-		syncPeriod:     syncPeriod,
-		iptables:       ipt,
-		masqueradeAll:  masqueradeAll,
-		masqueradeMark: masqueradeMark,
-		exec:           exec,
-		clusterCIDR:    clusterCIDR,
+		client:          client,
+		kubestackClient: kubestackClient,
+		serviceMap:      make(map[proxy.ServicePortName]*serviceInfo),
+		endpointsMap:    make(map[proxy.ServicePortName][]string),
+		portsMap:        make(map[localPort]closeable),
+		syncPeriod:      syncPeriod,
+		iptables:        ipt,
+		masqueradeAll:   masqueradeAll,
+		masqueradeMark:  masqueradeMark,
+		exec:            exec,
+		clusterCIDR:     clusterCIDR,
 	}, nil
 }
 
@@ -658,20 +673,52 @@ func (proxier *Proxier) syncProxyRules() {
 	namespaceMap := make(map[string](map[proxy.ServicePortName]*serviceInfo))
 	//divide serviceMap into subMap by namespace
 	for svcName, svcInfo := range proxier.serviceMap {
-		namespaceMap[svcName.Namespace][svcName] = svcInfo
+		submap, ok := namespaceMap[svcName.Namespace]
+		if ok {
+			submap[svcName] = svcInfo
+			namespaceMap[svcName.Namespace] = submap
+		} else {
+			n := make(map[proxy.ServicePortName]*serviceInfo)
+			n[svcName] = svcInfo
+			namespaceMap[svcName.Namespace] = n
+		}
 	}
 
 	// Build rules for each service.
-	for _, serviceSubMap := range namespaceMap {
+	for namespace, serviceSubMap := range namespaceMap {
 		// Accumulate NAT chains to keep.
 		activeNATChains := map[utiliptables.Chain]bool{} // use a map as a set
 		// Accumulate the set of local ports that we will be holding open once this update is complete
 		//replacementPortsMap := map[localPort]closeable{}
 
-		//routerNS := kubestackClient.GetRouterNSByNameSpace(svcName.Namespace)
-		var routerNS string
+		//Get routerNS
+		if namespace == "default" {
+			continue
+		}
+		nsName, err := proxier.client.Namespaces().Get(namespace)
+		if err != nil {
+			glog.Errorf("Couldn't get info of namespace %s: %v", nsName, err)
+			return
+		}
+		subnetID, ok := nsName.ObjectMeta.Annotations["nephele/subnetID"]
+		if ok == false {
+			glog.Errorf("There is no subnet associated with namespace %s", nsName)
+			return
+		}
+		resp, err := proxier.kubestackClient.GetRouterNS(
+			context.Background(),
+			&iptablestypes.GetRouterNSRequest{
+				SubnetID: subnetID,
+			},
+		)
+		if err != nil {
+			glog.Errorf("GetRouterNS failed: %v", err)
+			return
+		}
+		routerNS := resp.RouterNS
 
 		{
+			// Create and link the kube services chain.
 			tablesNeedServicesChain := []utiliptables.Table{utiliptables.TableFilter, utiliptables.TableNAT}
 			for _, table := range tablesNeedServicesChain {
 				if _, err := proxier.iptables.EnsureChain(routerNS, table, kubeServicesChain); err != nil {
