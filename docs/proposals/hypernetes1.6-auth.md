@@ -129,7 +129,7 @@ roleRef:
 ```
 role and rolebinding will be removed when namespace are deleted
 ### a network is created/deleted
-Which kind of resource `Network` will be defined, namespaced or non-namespaced?  If it is non-namespace, we can set permission of `Network` in `ClusterRole` when user are created. If it is namespaced resource, the permission of `Network` will be set in `Role` when namespace are created.
+`Network` will be defined non-namespaced resource. we can set permission of `Network` in `ClusterRole` when user are created.
 
 ### a user is deleted:
 `ClusterRoleBinding` related the user will be removed at least. 
