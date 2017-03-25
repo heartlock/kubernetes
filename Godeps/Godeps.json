@@ -991,6 +991,16 @@
 			"Rev": "2e44421e256d82ebbf3d4d4fcabe8930b905eff3"
 		},
 		{
+			"ImportPath": "github.com/go-kit/kit/log",
+			"Comment": "v0.2.0-95-gfe6fe28",
+			"Rev": "fe6fe28ba0d54b39f27e79cddba4911b7e4fffc7"
+		},
+		{
+			"ImportPath": "github.com/go-logfmt/logfmt",
+			"Comment": "v0.3.0",
+			"Rev": "390ab7935ee28ec6b286364bba9b4dd6410cb3d5"
+		},
+		{
 			"ImportPath": "github.com/go-openapi/analysis",
 			"Rev": "b44dc874b601d9e4e2f6e19140e794ba24bead3b"
 		},
@@ -1029,6 +1039,11 @@
 		{
 			"ImportPath": "github.com/go-openapi/validate",
 			"Rev": "deaf2c9013bc1a7f4c774662259a506ba874d80f"
+		},
+		{
+			"ImportPath": "github.com/go-stack/stack",
+			"Comment": "v1.5.2",
+			"Rev": "100eb0c0a9c5b306ca2fb4f165df21d80ada4b82"
 		},
 		{
 			"ImportPath": "github.com/godbus/dbus",
@@ -1449,6 +1464,10 @@
 			"Rev": "12f19e5e04d617182cffa5c11f189ef0013b9791"
 		},
 		{
+			"ImportPath": "github.com/gophercloud/gophercloud/openstack/identity/v2/users",
+			"Rev": "12f19e5e04d617182cffa5c11f189ef0013b9791"
+		},
+		{
 			"ImportPath": "github.com/gophercloud/gophercloud/openstack/identity/v3/extensions/trusts",
 			"Rev": "12f19e5e04d617182cffa5c11f189ef0013b9791"
 		},
@@ -1665,6 +1684,10 @@
 		{
 			"ImportPath": "github.com/kr/fs",
 			"Rev": "2788f0dbd16903de03cb8186e5c7d97b69ad387b"
+		},
+		{
+			"ImportPath": "github.com/kr/logfmt",
+			"Rev": "b84e30acd515aadc4b783ad4ff83aff3299bdfe0"
 		},
 		{
 			"ImportPath": "github.com/kr/pty",
@@ -2541,6 +2564,10 @@
 		{
 			"ImportPath": "golang.org/x/oauth2/jwt",
 			"Rev": "3c3a985cb79f52a3190fbc056984415ca6763d01"
+		},
+		{
+			"ImportPath": "golang.org/x/sync/errgroup",
+			"Rev": "5a06fca2c336a4b2b2fcb45702e8c47621b2aa2c"
 		},
 		{
 			"ImportPath": "golang.org/x/sys/unix",

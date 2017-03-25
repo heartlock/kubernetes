@@ -19,6 +19,7 @@ package keystone
 import (
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -26,6 +27,8 @@ import (
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 
+	"github.com/gophercloud/gophercloud/openstack/identity/v2/users"
+	"github.com/gophercloud/gophercloud/openstack/utils"
 	netutil "k8s.io/apimachinery/pkg/util/net"
 	"k8s.io/apiserver/pkg/authentication/user"
 	certutil "k8s.io/client-go/util/cert"
@@ -46,13 +49,50 @@ func (keystoneAuthenticator *KeystoneAuthenticator) AuthenticatePassword(usernam
 		Password:         password,
 	}
 
-	_, err := keystoneAuthenticator.AuthenticatedClient(opts)
+	client, err := keystoneAuthenticator.AuthenticatedClient(opts)
 	if err != nil {
 		glog.Info("Failed: Starting openstack authenticate client:" + err.Error())
 		return nil, false, errors.New("Failed to authenticate")
 	}
 
-	return &user.DefaultInfo{Name: username}, true, nil
+	versions := []*utils.Version{
+		{ID: "v2.0", Priority: 20, Suffix: "/v2.0/"},
+		{ID: "v3.0", Priority: 30, Suffix: "/v3/"},
+	}
+	chosen, endpoint, err := utils.ChooseVersion(client, versions)
+	if err != nil {
+		return nil, false, err
+	}
+
+	var identityClient *gophercloud.ServiceClient
+
+	switch chosen.ID {
+	case "v2.0":
+		identityClient, err = openstack.NewIdentityV2(client, gophercloud.EndpointOpts{})
+		if err != nil {
+			return nil, false, err
+		}
+	case "v3.0":
+		identityClient, err = openstack.NewIdentityV3(client, gophercloud.EndpointOpts{})
+		if err != nil {
+			return nil, false, err
+		}
+	default:
+		return nil, false, fmt.Errorf("Unrecognized identity version: %s", chosen.ID)
+	}
+	if endpoint != "" {
+		identityClient.Endpoint = endpoint
+	}
+	res := users.Get(identityClient, username)
+	userres, err := res.Extract()
+	if err != nil {
+		return nil, false, err
+	}
+
+	return &user.DefaultInfo{
+		Name:   username,
+		Groups: []string{userres.TenantID},
+	}, true, nil
 }
 
 // AuthenticatedClient logs in to an OpenStack cloud found at the identity endpoint specified by options, acquires a
